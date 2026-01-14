@@ -1,41 +1,38 @@
-name: Trage Wegen Monitor
+name: Buurtwegen Monitor
 
 on:
-schedule:
-# Dit draait elke maandag om 00:00 UTC.
-# Uitleg cron: 'minuut uur dag-v-maand maand dag-v-week'
-- cron: '0 0 * * 1'
-workflow_dispatch: # Hiermee kun je het script handmatig starten via de GitHub UI
+  schedule:
+    - cron: '0 2 * * *' # Elke nacht om 02:00
+  workflow_dispatch: # Laat je toe om het script handmatig te starten
 
 jobs:
-build:
-runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-steps:
-  - name: Checkout repository
-    # Deze stap kopieert je bestanden naar de virtuele computer van GitHub
-    uses: actions/checkout@v3
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
 
-  - name: Set up Python
-    # Hier wordt Python geïnstalleerd
-    uses: actions/setup-python@v4
-    with:
-      python-version: '3.9'
+      - name: Install Python dependencies
+        run: |
+          pip install geopandas pandas shapely requests
 
-  - name: Install dependencies
-    # Installatie van bibliotheken zoals Geopandas en OpenPyXL
-    run: |
-      python -m pip install --upgrade pip
-      pip install geopandas pandas requests openpyxl fiona pyproj rtree shapely
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
 
-  - name: Run Monitor Script
-    # Voer het Python script uit
-    run: python trage_wegen_monitor.py
+      - name: Run Monitor Script
+        run: node monitor.js
 
-  - name: Upload Rapport
-    # Bewaar het Excel-resultaat als downloadbaar bestand (Artifact)
-    uses: actions/upload-artifact@v3
-    with:
-      name: trage-wegen-rapporten
-      path: rapporten/*.xlsx
-
+      - name: Commit and Push results
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git add matches.geojson
+          git commit -m "Update matches.geojson [skip ci]" || exit 0
+          git push
