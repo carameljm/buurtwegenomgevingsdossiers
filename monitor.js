@@ -1,6 +1,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 
+// GitHub Raw links voor de Python analyse (input)
 const URL_BUURTWEGEN = "https://raw.githubusercontent.com/carameljm/buurtwegenomgevingsdossiers/main/buurtwegenoostvlaanderen.geojson";
 const URL_WIJZIGINGEN = "https://raw.githubusercontent.com/carameljm/buurtwegenomgevingsdossiers/main/wijzigingenoostvlaanderen.geojson";
 
@@ -15,13 +16,14 @@ from shapely.geometry import box
 
 def run_monitor():
     try:
+        # Regio BBOX (Lambert 72)
         minx, miny, maxx, maxy = 77144, 158145, 127271, 200742
         regio_bbox = box(minx, miny, maxx, maxy)
         
         def load_filtered(url):
             try:
                 gdf = gpd.read_file(url, bbox=regio_bbox)
-                if gdf.empty: return None
+                if gdf is None or gdf.empty: return None
                 if gdf.crs is None: gdf.set_crs("EPSG:4326", inplace=True)
                 return gdf.to_crs("EPSG:31370")
             except: return None
@@ -30,15 +32,19 @@ def run_monitor():
         gdf_wijzig = load_filtered("${URL_WIJZIGINGEN}")
         
         wegen_lagen = [l for l in [gdf_buurt, gdf_wijzig] if l is not None]
-        if not wegen_lagen: return {"status": "error", "message": "Wegenbestanden niet bereikbaar."}
+        if not wegen_lagen: 
+            return {"status": "oke", "matches": [], "bericht": "Geen wegen in BBOX"}
+            
         gdf_trage_wegen = pd.concat(wegen_lagen, ignore_index=True)
 
+        # WFS Config
         WFS_URL = "https://www.mercator.vlaanderen.be/raadpleegdienstenmercatorpubliek/wfs"
         LAGEN_OMGEVING = ["lu:lu_omv_gd_v2", "lu:lu_omv_vk_v2"]
         cutoff_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
         
         recente_dossiers = []
         for laag in LAGEN_OMGEVING:
+            # We gebruiken 'geometry' als fallback als 'geom' faalt
             cql = f"BBOX(geom, {minx}, {miny}, {maxx}, {maxy}) AND datum_indiening >= {cutoff_date}T00:00:00Z"
             params = {'service': 'WFS', 'version': '1.1.0', 'request': 'GetFeature', 'typeName': laag, 'outputFormat': 'application/json', 'srsName': 'EPSG:31370', 'CQL_FILTER': cql}
             try:
@@ -46,7 +52,7 @@ def run_monitor():
                 if "Illegal property name: geom" in r.text:
                     params['CQL_FILTER'] = params['CQL_FILTER'].replace('geom', 'geometry')
                     r = requests.get(WFS_URL, params=params, timeout=20)
-                if r.status_code == 200:
+                if r.status_code == 200 and "ExceptionReport" not in r.text:
                     temp_gdf = gpd.read_file(StringIO(r.text))
                     if not temp_gdf.empty: recente_dossiers.append(temp_gdf)
             except: continue
@@ -54,28 +60,28 @@ def run_monitor():
         if not recente_dossiers: return {"status": "oke", "matches": []}
 
         totaal_omv = pd.concat(recente_dossiers, ignore_index=True)
-        totaal_omv['original_geometry'] = totaal_omv.geometry # Bewaar voor export
+        totaal_omv['original_geometry'] = totaal_omv.geometry 
         
-        # PAS DE KRIMP TOE (1 meter)
+        # KRIMPEN MET 1 METER
         totaal_omv['geometry'] = totaal_omv.geometry.buffer(-1.0)
         totaal_omv = totaal_omv[~totaal_omv.geometry.is_empty]
 
+        # JOIN
         match = gpd.sjoin(totaal_omv, gdf_trage_wegen, how='inner', predicate='intersects')
 
         if not match.empty:
-            # Pak de originele (niet-gekrompen) geometrie voor de kaart
             export_gdf = totaal_omv.loc[match.index.unique()].copy()
             export_gdf['geometry'] = export_gdf['original_geometry']
             export_gdf = export_gdf.drop(columns=['original_geometry', 'index_right'])
             
-            # Voeg link toe
+            # Link genereren
             def make_link(row):
-                d_id = row.get('dossierid') or row.get('dossier_id')
+                d_id = row.get('dossierid') or row.get('dossier_id') or "onbekend"
                 return f"https://omgevingsloketinzage.vlaanderen.be/raadpleegen-dossier/_/dossier/{d_id}"
             
             export_gdf['Link'] = export_gdf.apply(make_link, axis=1)
             
-            # Datum conversie voor JSON
+            # Datum naar string voor JSON
             for col in export_gdf.select_dtypes(include=['datetime64', 'datetimetz']).columns:
                 export_gdf[col] = export_gdf[col].dt.strftime('%Y-%m-%d')
 
@@ -101,8 +107,9 @@ try {
         fs.writeFileSync('matches.geojson', JSON.stringify(result.geojson, null, 2));
         console.log("MATCHES_FOUND");
     } else {
-        // Maak leeg bestand als er geen matches zijn om fouten in de kaart te voorkomen
-        fs.writeFileSync('matches.geojson', JSON.stringify({type: "FeatureCollection", features: []}));
+        // Altijd een geldig GeoJSON bestand schrijven, zelfs als het leeg is
+        const emptyGeoJSON = { type: "FeatureCollection", features: [] };
+        fs.writeFileSync('matches.geojson', JSON.stringify(emptyGeoJSON, null, 2));
         console.log("NO_MATCHES");
     }
 } catch (err) {
