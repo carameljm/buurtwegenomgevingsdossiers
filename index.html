@@ -1,51 +1,96 @@
 <!DOCTYPE html>
-<html>
+<html lang="nl">
 <head>
-    <title>Trage Wegen Monitor</title>
     <meta charset="utf-8" />
+    <title>Kaart Buurtwegen & Omgevingsdossiers</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
     <style>
-        body { margin: 0; padding: 0; }
-        #map { height: 100vh; width: 100vw; }
-        .legend { background: white; padding: 10px; line-height: 18px; border-radius: 5px; box-shadow: 0 0 15px rgba(0,0,0,0.2); }
+        body { margin: 0; padding: 0; font-family: sans-serif; }
+        #map { height: 100vh; width: 100vw; background: #f0f0f0; }
+        .info-panel {
+            position: absolute; top: 10px; right: 10px; z-index: 1000;
+            background: white; padding: 10px; border-radius: 5px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2); max-width: 250px;
+        }
     </style>
 </head>
 <body>
-    <div id="map"></div>
-    <script>
-        var map = L.map('map').setView([50.8, 3.6], 12);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
 
+    <div class="info-panel">
+        <strong>Legende</strong><br>
+        <span style="color: #3388ff;">━</span> Buurtwegen (Atlas)<br>
+        <span style="color: red;">⬛</span> Omgevingsmatch (-1m krimp)
+    </div>
+
+    <div id="map"></div>
+
+    <script>
+        // Initialiseer kaart (gecentreerd op Maarkedal)
+        var map = L.map('map').setView([50.78, 3.63], 13);
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap bijdragers'
+        }).addTo(map);
+
+        // URL Parameters ophalen (?dossier=...)
         const urlParams = new URLSearchParams(window.location.search);
         const targetDossier = urlParams.get('dossier');
 
-        // 1. Statische Wegen
-        fetch('https://raw.githubusercontent.com/carameljm/buurtwegenomgevingsdossiers/main/buurtwegenoostvlaanderen.geojson')
-            .then(r => r.json())
-            .then(data => L.geoJSON(data, { style: { color: "#3388ff", weight: 2, opacity: 0.7 } }).addTo(map));
+        // 1. BUURTWEGEN LADEN (Statisch)
+        fetch('buurtwegenoostvlaanderen.geojson')
+            .then(res => res.json())
+            .then(data => {
+                L.geoJSON(data, {
+                    style: { color: "#3388ff", weight: 3, opacity: 0.6 }
+                }).addTo(map);
+            })
+            .catch(err => console.error("Kon buurtwegen niet laden:", err));
 
-        // 2. Matches laden en focussen
+        // 2. WIJZIGINGEN LADEN (Statisch)
+        fetch('wijzigingenoostvlaanderen.geojson')
+            .then(res => res.json())
+            .then(data => {
+                L.geoJSON(data, {
+                    style: { color: "#33cc33", weight: 3, opacity: 0.6 }
+                }).addTo(map);
+            })
+            .catch(err => console.error("Kon wijzigingen niet laden:", err));
+
+        // 3. MATCHES LADEN (Dynamisch gegeneerd door script)
         fetch('matches.geojson')
-            .then(r => r.json())
+            .then(res => res.json())
             .then(data => {
                 const matchLayer = L.geoJSON(data, {
-                    style: { color: "red", fillColor: "red", fillOpacity: 0.4 },
+                    style: { color: "red", fillColor: "red", fillOpacity: 0.5, weight: 2 },
                     onEachFeature: (feature, layer) => {
-                        const id = feature.properties.dossierid || feature.properties.dossier_id;
-                        layer.bindPopup(`<b>Dossier:</b> ${id}<br><a href="${feature.properties.Link}" target="_blank">Open Loket</a>`);
+                        const d_id = feature.properties.dossierid || feature.properties.dossier_id || "Onbekend";
+                        const link = feature.properties.Link || "#";
                         
-                        // Automatische zoom als parameter matcht
-                        if (targetDossier && id === targetDossier) {
+                        layer.bindPopup(`
+                            <strong>OMGEVINGSDOSSIER</strong><br>
+                            ID: ${d_id}<br>
+                            <hr>
+                            <a href="${link}" target="_blank" style="color: red; font-weight: bold;">Bekijk in Omgevingsloket</a>
+                        `);
+
+                        // Focus op dossier als de URL-parameter matcht
+                        if (targetDossier && d_id === targetDossier) {
                             setTimeout(() => {
-                                map.fitBounds(layer.getBounds(), { padding: [50, 50], maxZoom: 17 });
+                                map.fitBounds(layer.getBounds(), { padding: [100, 100], maxZoom: 17 });
                                 layer.openPopup();
-                            }, 500);
+                            }, 800);
                         }
                     }
                 }).addTo(map);
-            });
+                
+                console.log("Matches geladen:", data.features.length);
+            })
+            .catch(err => console.error("Geen matches gevonden of bestand ontbreekt:", err));
+
     </script>
 </body>
 </html>
