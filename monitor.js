@@ -39,7 +39,7 @@ def run_monitor():
         # 2. Omgevingsloket WFS (Check laatste 7 dagen)
         WFS_URL = "https://www.mercator.vlaanderen.be/raadpleegdienstenmercatorpubliek/wfs"
         LAGEN_OMGEVING = ["lu:lu_omv_gd_v2", "lu:lu_omv_vk_v2"]
-        cutoff_date = (datetime.now() - timedelta(days=100)).strftime('%Y-%m-%d')
+        cutoff_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
         
         recente_dossiers = []
         for laag in LAGEN_OMGEVING:
