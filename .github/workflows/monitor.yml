@@ -29,9 +29,6 @@ jobs:
       - name: Run Monitor Script
         run: node monitor.js
 
-      - name: Run Monitor Script
-        run: node omgevings_check.py
-
       - name: Commit and Push results
         run: |
           git config --global user.name "GitHub Action"
