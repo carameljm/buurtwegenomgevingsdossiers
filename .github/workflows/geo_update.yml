@@ -29,7 +29,4 @@ jobs:
           pip install pandas geopandas shapely pyproj rtree requests
 
       - name: Run Geo Script
-        env:
-          HA_URL: ${{ secrets.HA_URL }}
-          HA_TOKEN: ${{ secrets.HA_TOKEN }}
-        run: python mijn_geo_script.py
+        run: python omgevings_check.py
