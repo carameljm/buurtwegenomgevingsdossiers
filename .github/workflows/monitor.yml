@@ -28,6 +28,7 @@ jobs:
 
       - name: Run Monitor Script
         run: node monitor.js
+        run: node omgevings_check.py
 
       - name: Commit and Push results
         run: |
